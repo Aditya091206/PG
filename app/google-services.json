@@ -1,0 +1,47 @@
+{
+  "project_info": {
+    "project_number": "572482351795",
+    "project_id": "pg-manager-1d4c4",
+    "storage_bucket": "pg-manager-1d4c4.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:572482351795:android:7b09979d3e0249b5af36c6",
+        "android_client_info": {
+          "package_name": "com.pgmanager.app"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "572482351795-k4rifmlj0vs49ugrdgncs8aef6u0ogu8.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.pgmanager.app",
+            "certificate_hash": "d642dddd6cb593d1ef7afa807cd7bf4f57528c11"
+          }
+        },
+        {
+          "client_id": "572482351795-ummf3pvoupkqv5ngf4ar9maohn720dvf.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCoZgBSB7TbMklj3dkEDCLx4YnLX00wlTY"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "572482351795-ummf3pvoupkqv5ngf4ar9maohn720dvf.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
