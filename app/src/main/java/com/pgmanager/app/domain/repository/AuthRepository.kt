@@ -16,6 +16,7 @@ interface AuthRepository {
         callbacks: PhoneAuthProvider.OnVerificationStateChangedCallbacks
     )
     suspend fun verifyOtp(verificationId: String, otpCode: String): Result<User>
+    suspend fun verifyCredential(credential: com.google.firebase.auth.PhoneAuthCredential): Result<User>
     suspend fun signInWithGoogle(activity: Activity): Result<User>
     suspend fun assignRole(role: UserRole): Result<Unit>
     suspend fun updateProfile(fullName: String, email: String?, address: String?, idProofUrl: String?): Result<Unit>

@@ -54,7 +54,8 @@ fun LoginScreen(
     viewModel: AuthViewModel,
     onCodeSent: () -> Unit,
     onNavigateToTerms: () -> Unit,
-    onNavigateToPrivacy: () -> Unit
+    onNavigateToPrivacy: () -> Unit,
+    onSkipLogin: () -> Unit
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     val snackbarHostState = remember { SnackbarHostState() }
@@ -229,6 +230,17 @@ fun LoginScreen(
                     enabled = !state.isLoading
                 ) {
                     Text("Continue with Google")
+                }
+            }
+
+            if (com.pgmanager.app.BuildConfig.DEBUG) {
+                Spacer(modifier = Modifier.height(12.dp))
+                OutlinedButton(
+                    onClick = onSkipLogin,
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = ButtonShape
+                ) {
+                    Text("Skip login (demo)")
                 }
             }
 

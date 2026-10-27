@@ -160,8 +160,13 @@ class AuthRepositoryImpl(
     }
 
     override suspend fun verifyOtp(verificationId: String, otpCode: String): Result<User> {
+        return verifyCredential(PhoneAuthProvider.getCredential(verificationId, otpCode))
+    }
+
+    override suspend fun verifyCredential(
+        credential: PhoneAuthCredential
+    ): Result<User> {
         return try {
-            val credential = PhoneAuthProvider.getCredential(verificationId, otpCode)
             val authResult = auth.signInWithCredential(credential).await()
             val firebaseUser = authResult.user ?: throw IllegalStateException("Firebase user is null")
 
