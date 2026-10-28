@@ -18,6 +18,7 @@ import com.pgmanager.app.domain.model.AuthState
 import com.pgmanager.app.domain.model.User
 import com.pgmanager.app.domain.model.UserRole
 import com.pgmanager.app.domain.repository.AuthRepository
+import com.pgmanager.app.data.LocalDatabase
 import com.pgmanager.app.security.EncryptedSessionStore
 import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.flow.Flow
@@ -34,92 +35,43 @@ class AuthRepositoryImpl(
     private val sessionStore: EncryptedSessionStore
 ) : AuthRepository {
 
-    override fun observeAuthState(): Flow<AuthState> = callbackFlow {
-        val authListener = FirebaseAuth.AuthStateListener { firebaseAuth ->
-            val firebaseUser = firebaseAuth.currentUser
-            if (firebaseUser == null) {
-                sessionStore.clearAll()
-                trySend(AuthState.Unauthenticated)
-            } else {
-                val userDocRef = firestore.collection("users").document(firebaseUser.uid)
-                val snapshotRegistration = userDocRef.addSnapshotListener { snapshot, error ->
-                    if (error != null) {
-                        trySend(AuthState.Unauthenticated)
-                        return@addSnapshotListener
-                    }
+    private val localDatabase = LocalDatabase(context)
+    private val localAuthState = kotlinx.coroutines.flow.MutableStateFlow<AuthState>(
+        AuthState.Unauthenticated
+    )
 
-                    if (snapshot != null && snapshot.exists()) {
-                        val roleStr = snapshot.getString("role")
-                        val role = UserRole.fromString(roleStr)
-                        val fullName = snapshot.getString("fullName") ?: ""
-                        val email = snapshot.getString("email")
-                        val profilePhotoUrl = snapshot.getString("profilePhotoUrl")
-                        val address = snapshot.getString("address")
-                        val idProofUrl = snapshot.getString("idProofUrl")
-                        val activePgId = snapshot.getString("activePgId")
-                        val ownedPgIds = (snapshot.get("ownedPgIds") as? List<*>)?.filterIsInstance<String>() ?: emptyList()
-
-                        // Pending Join Request check
-                        val pendingReq = snapshot.get("pendingJoinRequest") as? Map<*, *>
-                        val pendingReqId = pendingReq?.get("requestId") as? String
-                        val pendingPgName = pendingReq?.get("pgName") as? String
-                        val pendingExpiresAt = pendingReq?.get("expiresAt")?.toString()
-
-                        val user = User(
-                            userId = firebaseUser.uid,
-                            phoneNumber = firebaseUser.phoneNumber ?: "",
-                            email = email,
-                            fullName = fullName,
-                            role = role,
-                            profilePhotoUrl = profilePhotoUrl,
-                            address = address,
-                            idProofUrl = idProofUrl,
-                            ownedPgIds = ownedPgIds,
-                            activePgId = activePgId,
-                            pendingJoinRequestId = pendingReqId,
-                            pendingPgName = pendingPgName,
-                            pendingExpiresAt = pendingExpiresAt
-                        )
-
-                        sessionStore.saveSession(
-                            userId = user.userId,
-                            phoneNumber = user.phoneNumber,
-                            role = user.role,
-                            activePgId = user.activePgId
-                        )
-
-                        if (role == UserRole.STUDENT && activePgId == null && pendingReqId != null) {
-                            trySend(
-                                AuthState.AwaitingApproval(
-                                    user = user,
-                                    requestId = pendingReqId,
-                                    pgName = pendingPgName ?: "PG Accommodation",
-                                    expiresAt = pendingExpiresAt ?: ""
-                                )
-                            )
-                        } else {
-                            trySend(AuthState.Authenticated(user))
-                        }
-                    } else {
-                        // User profile doc does not exist yet (first-time registration)
-                        val initialUser = User(
-                            userId = firebaseUser.uid,
-                            phoneNumber = firebaseUser.phoneNumber ?: "",
-                            role = UserRole.UNASSIGNED
-                        )
-                        trySend(AuthState.Authenticated(initialUser))
-                    }
-                }
+    init {
+        sessionStore.getUserId()?.let { userId ->
+            localAuthState.value = when (userId) {
+                "local-owner" -> AuthState.Authenticated(
+                    User(userId, "9876543210", "owner@pgmanager.local", "Demo Owner", UserRole.OWNER)
+                )
+                "local-student" -> AuthState.Authenticated(
+                    User(userId, "9876543211", "student@pgmanager.local", "Demo Student", UserRole.STUDENT)
+                )
+                else -> AuthState.Unauthenticated
             }
-        }
-
-        auth.addAuthStateListener(authListener)
-
-        awaitClose {
-            auth.removeAuthStateListener(authListener)
+        } ?: auth.currentUser?.let { firebaseUser ->
+            localAuthState.value = AuthState.Authenticated(
+                User(
+                    userId = firebaseUser.uid,
+                    phoneNumber = firebaseUser.phoneNumber ?: "",
+                    email = firebaseUser.email,
+                    fullName = firebaseUser.displayName ?: ""
+                )
+            )
         }
     }
 
+    override suspend fun signInWithLocalCredentials(email: String, password: String): Result<User> {
+        val user = localDatabase.authenticate(email, password)
+            ?: return Result.failure(IllegalArgumentException("Invalid email or password"))
+        sessionStore.saveSession(user.userId, user.phoneNumber, user.role, user.activePgId)
+        localAuthState.value = AuthState.Authenticated(user)
+        return Result.success(user)
+    }
+
+    override fun observeAuthState(): Flow<AuthState> = localAuthState
     override suspend fun getCurrentUser(): User? {
         val uid = auth.currentUser?.uid ?: return null
         return try {
@@ -188,6 +140,7 @@ class AuthRepositoryImpl(
                 userId = firebaseUser.uid,
                 phoneNumber = firebaseUser.phoneNumber ?: ""
             )
+            localAuthState.value = AuthState.Authenticated(user)
             Result.success(user)
         } catch (e: Exception) {
             Result.failure(e)
@@ -232,12 +185,14 @@ class AuthRepositoryImpl(
                     ).filterValues { it != null }
                 ).await()
             }
-            Result.success(getCurrentUser() ?: User(
+            val user = getCurrentUser() ?: User(
                 userId = firebaseUser.uid,
                 email = firebaseUser.email,
                 fullName = firebaseUser.displayName ?: "",
                 phoneNumber = firebaseUser.phoneNumber ?: ""
-            ))
+            )
+            localAuthState.value = AuthState.Authenticated(user)
+            Result.success(user)
         } catch (e: GetCredentialException) {
             Result.failure(IllegalStateException("Google Sign-In was cancelled or unavailable", e))
         } catch (e: Exception) {
@@ -306,6 +261,7 @@ class AuthRepositoryImpl(
                 // Best effort cache deletion
             }
             auth.signOut()
+            localAuthState.value = AuthState.Unauthenticated
             Result.success(Unit)
         } catch (e: Exception) {
             Result.failure(e)

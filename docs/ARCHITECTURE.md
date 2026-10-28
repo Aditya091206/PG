@@ -326,3 +326,18 @@ val bedsFlow = firestore.collection("pgs").document(pgId)
   - Storage: ID proofs and photos compressed to $\le 300\text{ KB}$. 25,000 students $\approx$ 7.5 GB storage (\$0.19 / month).
   - Cloud Functions: 50,000 invocations/day falls well within the free tier (2,000,000/month free).
   - Total operational backend cost: $<\$10\text{ USD}$ per month for 25,000 active students and 1,000 PG properties.
+# Local SQLite authentication
+
+The Android app includes a local SQLite database (`pg_manager.db`) for offline
+development and demonstrations. On first launch it seeds these temporary
+accounts:
+
+| Role | Email | Password |
+|---|---|---|
+| Owner | `owner@pgmanager.local` | `Owner@123` |
+| Student | `student@pgmanager.local` | `Student@123` |
+
+Passwords are stored as SHA-256 hashes and the active local session is stored
+using the existing encrypted session store. Firebase remains available for the
+legacy OTP and cloud data repositories, but the email login path is local and
+does not require network access.

@@ -50,6 +50,40 @@ class AuthViewModel(
         _uiState.update { it.copy(phoneNumber = filtered, errorMessage = null) }
     }
 
+    fun onEmailChanged(email: String) {
+        _uiState.update { it.copy(email = email, errorMessage = null) }
+    }
+
+    fun onPasswordChanged(password: String) {
+        _uiState.update { it.copy(password = password, errorMessage = null) }
+    }
+
+    fun signInWithLocalCredentials(onSuccess: (User) -> Unit) {
+        val email = _uiState.value.email.trim()
+        val password = _uiState.value.password
+        if (email.isBlank() || password.isBlank()) {
+            _uiState.update { it.copy(errorMessage = "Enter your email and password") }
+            return
+        }
+        if (!_uiState.value.termsAccepted) {
+            _uiState.update { it.copy(errorMessage = "Please accept the Terms and Privacy Policy to continue") }
+            return
+        }
+        _uiState.update { it.copy(isLoading = true, errorMessage = null) }
+        viewModelScope.launch {
+            authRepository.signInWithLocalCredentials(email, password)
+                .onSuccess {
+                    _uiState.update { it.copy(isLoading = false) }
+                    onSuccess(it)
+                }
+                .onFailure { error ->
+                    _uiState.update {
+                        it.copy(isLoading = false, errorMessage = error.localizedMessage ?: "Invalid email or password")
+                    }
+                }
+        }
+    }
+
     fun signInWithGoogle(activity: Activity, onSuccess: (User) -> Unit) {
         if (!_uiState.value.termsAccepted) {
             _uiState.update {
@@ -86,10 +120,6 @@ class AuthViewModel(
 
     fun onFullNameChanged(name: String) {
         _uiState.update { it.copy(fullName = name, errorMessage = null) }
-    }
-
-    fun onEmailChanged(email: String) {
-        _uiState.update { it.copy(email = email, errorMessage = null) }
     }
 
     fun onAddressChanged(address: String) {

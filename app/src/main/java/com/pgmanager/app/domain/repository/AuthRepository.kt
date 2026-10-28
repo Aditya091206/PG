@@ -9,6 +9,7 @@ import kotlinx.coroutines.flow.Flow
 
 interface AuthRepository {
     fun observeAuthState(): Flow<AuthState>
+    suspend fun signInWithLocalCredentials(email: String, password: String): Result<User>
     suspend fun getCurrentUser(): User?
     fun sendPhoneOtp(
         activity: Activity,

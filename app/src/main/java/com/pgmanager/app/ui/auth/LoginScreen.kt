@@ -43,6 +43,7 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.pgmanager.app.R
@@ -103,6 +104,37 @@ fun LoginScreen(
                 style = MaterialTheme.typography.bodyLarge,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.padding(top = 4.dp, bottom = 32.dp)
+            )
+
+            OutlinedTextField(
+                value = state.email,
+                onValueChange = viewModel::onEmailChanged,
+                modifier = Modifier.fillMaxWidth(),
+                label = { Text("Email") },
+                placeholder = { Text("you@example.com") },
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email),
+                singleLine = true,
+                shape = InputFieldShape
+            )
+
+            Spacer(modifier = Modifier.height(12.dp))
+
+            OutlinedTextField(
+                value = state.password,
+                onValueChange = viewModel::onPasswordChanged,
+                modifier = Modifier.fillMaxWidth(),
+                label = { Text("Password") },
+                visualTransformation = PasswordVisualTransformation(),
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
+                singleLine = true,
+                shape = InputFieldShape
+            )
+
+            Text(
+                text = "Temporary owner: owner@pgmanager.local / Owner@123\nTemporary student: student@pgmanager.local / Student@123",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(top = 8.dp)
             )
 
             OutlinedTextField(
@@ -231,6 +263,17 @@ fun LoginScreen(
                 ) {
                     Text("Continue with Google")
                 }
+            }
+
+            OutlinedButton(
+                onClick = { viewModel.signInWithLocalCredentials { } },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(top = 12.dp),
+                enabled = state.email.isNotBlank() && state.password.isNotBlank() && !state.isLoading,
+                shape = ButtonShape
+            ) {
+                Text("Sign in with email")
             }
 
             if (com.pgmanager.app.BuildConfig.DEBUG) {
