@@ -1,0 +1,73 @@
+rules_version = '2';
+service firebase.storage {
+  match /b/{bucket}/o {
+
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function isImage() {
+      return request.resource.contentType.matches('image/.*');
+    }
+
+    function isPDF() {
+      return request.resource.contentType == 'application/pdf';
+    }
+
+    function isAcceptableDoc() {
+      return isImage() || isPDF();
+    }
+
+    function isUnderSize(sizeMB) {
+      return request.resource.size < sizeMB * 1024 * 1024;
+    }
+
+    // Default deny
+    match /{allPaths=**} {
+      allow read, write: if false;
+    }
+
+    // User KYC Documents (Private, only user and reviewing owner can read)
+    match /users/{userId}/kyc/{fileName} {
+      allow read: if isAuthenticated() && (
+        request.auth.uid == userId || request.auth.token.role == 'owner'
+      );
+      allow write: if isAuthenticated() && request.auth.uid == userId &&
+        isAcceptableDoc() && isUnderSize(10);
+    }
+
+    // User Profile Photos
+    match /users/{userId}/profile/{fileName} {
+      allow read: if isAuthenticated();
+      allow write: if isAuthenticated() && request.auth.uid == userId &&
+        isImage() && isUnderSize(5);
+    }
+
+    // PG Property Photos
+    match /pgs/{pgId}/photos/{fileName} {
+      allow read: if isAuthenticated();
+      allow write: if isAuthenticated() && request.auth.token.role == 'owner' &&
+        isImage() && isUnderSize(5);
+    }
+
+    // Maintenance Ticket Attachment Photos
+    match /pgs/{pgId}/tickets/{ticketId}/{fileName} {
+      allow read: if isAuthenticated();
+      allow write: if isAuthenticated() && isImage() && isUnderSize(5);
+    }
+
+    // GST Certificates (Private)
+    match /pgs/{pgId}/gst/{fileName} {
+      allow read: if isAuthenticated() && request.auth.token.role == 'owner';
+      allow write: if isAuthenticated() && request.auth.token.role == 'owner' &&
+        isAcceptableDoc() && isUnderSize(10);
+    }
+
+    // Payment Receipts (PDF or image)
+    match /pgs/{pgId}/receipts/{fileName} {
+      allow read: if isAuthenticated();
+      allow write: if isAuthenticated() && request.auth.token.role == 'owner' &&
+        isAcceptableDoc() && isUnderSize(5);
+    }
+  }
+}

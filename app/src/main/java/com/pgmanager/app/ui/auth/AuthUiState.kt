@@ -3,12 +3,13 @@ package com.pgmanager.app.ui.auth
 import com.pgmanager.app.domain.model.UserRole
 
 data class AuthUiState(
+    val email: String = "",
+    val password: String = "",
     val phoneNumber: String = "",
     val countryCode: String = "+91",
     val verificationId: String = "",
     val otpCode: String = "",
     val fullName: String = "",
-    val email: String = "",
     val address: String = "",
     val termsAccepted: Boolean = false,
     val selectedRole: UserRole = UserRole.UNASSIGNED,

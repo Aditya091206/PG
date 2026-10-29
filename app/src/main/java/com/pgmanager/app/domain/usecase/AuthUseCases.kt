@@ -4,6 +4,7 @@ import com.pgmanager.app.domain.model.AuthState
 import com.pgmanager.app.domain.model.User
 import com.pgmanager.app.domain.model.UserRole
 import com.pgmanager.app.domain.repository.AuthRepository
+import com.google.firebase.auth.PhoneAuthCredential
 import kotlinx.coroutines.flow.Flow
 
 class ObserveAuthStateUseCase(private val authRepository: AuthRepository) {
@@ -13,6 +14,12 @@ class ObserveAuthStateUseCase(private val authRepository: AuthRepository) {
 class VerifyOtpUseCase(private val authRepository: AuthRepository) {
     suspend operator fun invoke(verificationId: String, otpCode: String): Result<User> {
         return authRepository.verifyOtp(verificationId, otpCode)
+    }
+}
+
+class VerifyCredentialUseCase(private val authRepository: AuthRepository) {
+    suspend operator fun invoke(credential: PhoneAuthCredential): Result<User> {
+        return authRepository.verifyCredential(credential)
     }
 }
 

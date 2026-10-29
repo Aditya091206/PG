@@ -1,5 +1,6 @@
 package com.pgmanager.app
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.runtime.Composable
@@ -44,6 +45,7 @@ fun MainNavigation() {
             authRepository = container.authRepository,
             observeAuthStateUseCase = container.observeAuthStateUseCase,
             verifyOtpUseCase = container.verifyOtpUseCase,
+            verifyCredentialUseCase = container.verifyCredentialUseCase,
             assignRoleUseCase = container.assignRoleUseCase,
             updateProfileUseCase = container.updateProfileUseCase,
             logoutUseCase = container.logoutUseCase,
@@ -52,16 +54,32 @@ fun MainNavigation() {
     }
     val authState by authViewModel.authState.collectAsStateWithLifecycle()
     var route by remember { mutableStateOf(EntryRoute.LOGIN) }
+    var demoMode by remember { mutableStateOf(false) }
+    var demoRole by remember { mutableStateOf<UserRole?>(null) }
 
     when (val state = authState) {
         AuthState.Loading -> Unit
         AuthState.Unauthenticated -> {
+            BackHandler(enabled = route != EntryRoute.LOGIN) {
+                route = when (route) {
+                    EntryRoute.OTP,
+                    EntryRoute.TERMS,
+                    EntryRoute.PRIVACY,
+                    EntryRoute.ROLE -> EntryRoute.LOGIN
+                    EntryRoute.APP -> EntryRoute.ROLE
+                    EntryRoute.LOGIN -> EntryRoute.LOGIN
+                }
+            }
             when (route) {
                 EntryRoute.LOGIN -> LoginScreen(
                     viewModel = authViewModel,
                     onCodeSent = { route = EntryRoute.OTP },
                     onNavigateToTerms = { route = EntryRoute.TERMS },
-                    onNavigateToPrivacy = { route = EntryRoute.PRIVACY }
+                    onNavigateToPrivacy = { route = EntryRoute.PRIVACY },
+                    onSkipLogin = {
+                        demoMode = true
+                        route = EntryRoute.ROLE
+                    }
                 )
                 EntryRoute.OTP -> OtpVerificationScreen(
                     viewModel = authViewModel,
@@ -78,6 +96,45 @@ fun MainNavigation() {
                     document = LegalDocument.PRIVACY,
                     onNavigateBack = { route = EntryRoute.LOGIN }
                 )
+                EntryRoute.ROLE -> RoleSelectionScreen(
+                    viewModel = authViewModel,
+                    demoMode = demoMode,
+                    onRoleConfirmed = { role ->
+                        demoRole = role
+                        route = EntryRoute.APP
+                    }
+                )
+                EntryRoute.APP -> when (demoRole) {
+                    UserRole.OWNER -> OwnerApp(
+                        ownerId = "demo-owner",
+                        authViewModel = authViewModel,
+                        container = container
+                    )
+                    UserRole.STUDENT -> {
+                        BackHandler {
+                            demoRole = null
+                            route = EntryRoute.ROLE
+                        }
+                        StudentJoinScreen(
+                            viewModel = viewModel(key = "demo-student") {
+                                com.pgmanager.app.ui.student.StudentViewModel(
+                                    pgRepository = container.pgRepository,
+                                    operationsRepository = container.operationsRepository,
+                                    studentId = "demo-student",
+                                    initialPgId = null
+                                )
+                            },
+                            onLogout = {
+                                demoRole = null
+                                demoMode = false
+                                route = EntryRoute.LOGIN
+                            }
+                        )
+                    }
+                    else -> {
+                        route = EntryRoute.ROLE
+                    }
+                }
                 else -> {
                     route = EntryRoute.LOGIN
                 }
@@ -136,6 +193,13 @@ private fun OwnerApp(
 ) {
     var showRegister by remember { mutableStateOf(false) }
     var addRoomForPg by remember { mutableStateOf<String?>(null) }
+    BackHandler(enabled = showRegister || addRoomForPg != null) {
+        if (addRoomForPg != null) {
+            addRoomForPg = null
+        } else {
+            showRegister = false
+        }
+    }
     val ownerViewModel: OwnerViewModel = viewModel(key = ownerId) {
         OwnerViewModel(
             pgRepository = container.pgRepository,

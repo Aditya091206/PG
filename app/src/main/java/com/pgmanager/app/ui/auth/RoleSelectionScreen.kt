@@ -51,7 +51,8 @@ import com.pgmanager.app.theme.InputFieldShape
 @Composable
 fun RoleSelectionScreen(
     viewModel: AuthViewModel,
-    onRoleConfirmed: (UserRole) -> Unit
+    onRoleConfirmed: (UserRole) -> Unit,
+    demoMode: Boolean = false
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     val snackbarHostState = remember { SnackbarHostState() }
@@ -157,9 +158,13 @@ fun RoleSelectionScreen(
             Button(
                 onClick = {
                     val role = state.selectedRole
-                    viewModel.saveProfile {
-                        viewModel.confirmRole(role) {
-                            onRoleConfirmed(role)
+                    if (demoMode) {
+                        onRoleConfirmed(role)
+                    } else {
+                        viewModel.saveProfile {
+                            viewModel.confirmRole(role) {
+                                onRoleConfirmed(role)
+                            }
                         }
                     }
                 },

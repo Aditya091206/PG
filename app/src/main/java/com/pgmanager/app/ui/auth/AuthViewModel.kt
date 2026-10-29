@@ -16,6 +16,7 @@ import com.pgmanager.app.domain.usecase.LogoutUseCase
 import com.pgmanager.app.domain.usecase.ObserveAuthStateUseCase
 import com.pgmanager.app.domain.usecase.UpdateProfileUseCase
 import com.pgmanager.app.domain.usecase.VerifyOtpUseCase
+import com.pgmanager.app.domain.usecase.VerifyCredentialUseCase
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -30,6 +31,7 @@ class AuthViewModel(
     private val authRepository: AuthRepository,
     private val observeAuthStateUseCase: ObserveAuthStateUseCase,
     private val verifyOtpUseCase: VerifyOtpUseCase,
+    private val verifyCredentialUseCase: VerifyCredentialUseCase,
     private val assignRoleUseCase: AssignRoleUseCase,
     private val updateProfileUseCase: UpdateProfileUseCase,
     private val logoutUseCase: LogoutUseCase,
@@ -46,6 +48,40 @@ class AuthViewModel(
     fun onPhoneNumberChanged(number: String) {
         val filtered = number.filter { it.isDigit() }.take(10)
         _uiState.update { it.copy(phoneNumber = filtered, errorMessage = null) }
+    }
+
+    fun onEmailChanged(email: String) {
+        _uiState.update { it.copy(email = email, errorMessage = null) }
+    }
+
+    fun onPasswordChanged(password: String) {
+        _uiState.update { it.copy(password = password, errorMessage = null) }
+    }
+
+    fun signInWithLocalCredentials(onSuccess: (User) -> Unit) {
+        val email = _uiState.value.email.trim()
+        val password = _uiState.value.password
+        if (email.isBlank() || password.isBlank()) {
+            _uiState.update { it.copy(errorMessage = "Enter your email and password") }
+            return
+        }
+        if (!_uiState.value.termsAccepted) {
+            _uiState.update { it.copy(errorMessage = "Please accept the Terms and Privacy Policy to continue") }
+            return
+        }
+        _uiState.update { it.copy(isLoading = true, errorMessage = null) }
+        viewModelScope.launch {
+            authRepository.signInWithLocalCredentials(email, password)
+                .onSuccess {
+                    _uiState.update { it.copy(isLoading = false) }
+                    onSuccess(it)
+                }
+                .onFailure { error ->
+                    _uiState.update {
+                        it.copy(isLoading = false, errorMessage = error.localizedMessage ?: "Invalid email or password")
+                    }
+                }
+        }
     }
 
     fun signInWithGoogle(activity: Activity, onSuccess: (User) -> Unit) {
@@ -86,10 +122,6 @@ class AuthViewModel(
         _uiState.update { it.copy(fullName = name, errorMessage = null) }
     }
 
-    fun onEmailChanged(email: String) {
-        _uiState.update { it.copy(email = email, errorMessage = null) }
-    }
-
     fun onAddressChanged(address: String) {
         _uiState.update { it.copy(address = address, errorMessage = null) }
     }
@@ -99,6 +131,7 @@ class AuthViewModel(
     }
 
     fun sendOtp(activity: Activity, onCodeSent: () -> Unit) {
+        if (_uiState.value.isLoading) return
         val phone = _uiState.value.phoneNumber
         if (phone.length != 10) {
             _uiState.update { it.copy(errorMessage = "Enter a valid 10-digit mobile number") }
@@ -115,8 +148,22 @@ class AuthViewModel(
         val callbacks = object : PhoneAuthProvider.OnVerificationStateChangedCallbacks() {
             override fun onVerificationCompleted(credential: PhoneAuthCredential) {
                 val code = credential.smsCode
-                if (!code.isNullOrBlank()) {
-                    _uiState.update { it.copy(otpCode = code) }
+                _uiState.update { it.copy(isLoading = true, otpCode = code ?: it.otpCode) }
+                viewModelScope.launch {
+                    verifyCredentialUseCase(credential)
+                        .onSuccess { user ->
+                            _uiState.update { it.copy(isLoading = false) }
+                            onCodeSent()
+                        }
+                        .onFailure { error ->
+                            _uiState.update {
+                                it.copy(
+                                    isLoading = false,
+                                    errorMessage = error.localizedMessage
+                                        ?: "Automatic verification failed. Enter the SMS code manually."
+                                )
+                            }
+                        }
                 }
             }
 
@@ -124,7 +171,7 @@ class AuthViewModel(
                 _uiState.update {
                     it.copy(
                         isLoading = false,
-                        errorMessage = e.localizedMessage ?: "Failed to send verification code. Try again."
+                        errorMessage = firebaseAuthErrorMessage(e)
                     )
                 }
             }
@@ -146,7 +193,27 @@ class AuthViewModel(
             }
         }
 
-        authRepository.sendPhoneOtp(activity, fullPhoneNumber, callbacks)
+        try {
+            authRepository.sendPhoneOtp(activity, fullPhoneNumber, callbacks)
+        } catch (error: Exception) {
+            _uiState.update {
+                it.copy(
+                    isLoading = false,
+                    errorMessage = error.localizedMessage ?: "Unable to start phone verification."
+                )
+            }
+        }
+    }
+
+    private fun firebaseAuthErrorMessage(error: FirebaseException): String {
+        return when ((error as? com.google.firebase.auth.FirebaseAuthException)?.errorCode) {
+            "ERROR_INVALID_PHONE_NUMBER" -> "Enter a valid phone number, including the country code."
+            "ERROR_TOO_MANY_REQUESTS" -> "Too many attempts. Please wait a while and try again."
+            "ERROR_QUOTA_EXCEEDED" -> "SMS quota exceeded. Please try again later."
+            "ERROR_APP_NOT_AUTHORIZED" ->
+                "This app is not authorized for phone sign-in. Check Firebase app verification settings."
+            else -> error.localizedMessage ?: "Failed to send verification code. Try again."
+        }
     }
 
     private fun startResendTimer() {

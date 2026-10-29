@@ -22,7 +22,9 @@ service cloud.firestore {
     function isPGOwner(pgId) {
       return isOwner() && (
         request.auth.token.pgId == pgId ||
-        (request.auth.token.ownedPgIds != null && pgId in request.auth.token.ownedPgIds)
+        (request.auth.token.ownedPgIds != null && pgId in request.auth.token.ownedPgIds) ||
+        (exists(/databases/$(database)/documents/pgs/$(pgId)) &&
+          get(/databases/$(database)/documents/pgs/$(pgId)).data.ownerId == request.auth.uid)
       );
     }
 
@@ -45,9 +47,10 @@ service cloud.firestore {
     match /users/{userId} {
       allow read: if isUser(userId) || isOwner();
       allow create: if isUser(userId) &&
-        !request.resource.data.keys().hasAny(['role', 'ownedPgIds']);
+        request.resource.data.role == 'unassigned' &&
+        !request.resource.data.keys().hasAny(['ownedPgIds']);
       allow update: if isUser(userId) &&
-        !request.resource.data.diff(resource.data).affectedKeys().hasAny(['role', 'ownedPgIds']);
+        !request.resource.data.diff(resource.data).affectedKeys().hasAny(['role']);
       allow delete: if isUser(userId);
     }
 
