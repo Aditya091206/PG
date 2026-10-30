@@ -1,9 +1,10 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="gcm_defaultSenderId" translatable="false">100000000000</string>
-    <string name="google_api_key" translatable="false">AIzaSy_SAMPLE_KEY_FOR_BUILD_VERIFICATION</string>
-    <string name="google_app_id" translatable="false">1:100000000000:android:0000000000000000000000</string>
-    <string name="google_crash_reporting_api_key" translatable="false">AIzaSy_SAMPLE_KEY_FOR_BUILD_VERIFICATION</string>
-    <string name="google_storage_bucket" translatable="false">pg-manager-prod.appspot.com</string>
-    <string name="project_id" translatable="false">pg-manager-prod</string>
+    <string name="default_web_client_id" translatable="false">572482351795-ummf3pvoupkqv5ngf4ar9maohn720dvf.apps.googleusercontent.com</string>
+    <string name="gcm_defaultSenderId" translatable="false">572482351795</string>
+    <string name="google_api_key" translatable="false">AIzaSyCoZgBSB7TbMklj3dkEDCLx4YnLX00wlTY</string>
+    <string name="google_app_id" translatable="false">1:572482351795:android:7b09979d3e0249b5af36c6</string>
+    <string name="google_crash_reporting_api_key" translatable="false">AIzaSyCoZgBSB7TbMklj3dkEDCLx4YnLX00wlTY</string>
+    <string name="google_storage_bucket" translatable="false">pg-manager-1d4c4.firebasestorage.app</string>
+    <string name="project_id" translatable="false">pg-manager-1d4c4</string>
 </resources>
