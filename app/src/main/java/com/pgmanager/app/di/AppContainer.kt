@@ -14,6 +14,8 @@ import com.pgmanager.app.domain.usecase.ObserveAuthStateUseCase
 import com.pgmanager.app.domain.usecase.UpdateProfileUseCase
 import com.pgmanager.app.domain.usecase.VerifyOtpUseCase
 import com.pgmanager.app.domain.usecase.VerifyCredentialUseCase
+import com.pgmanager.app.domain.usecase.SendEmailCodeUseCase
+import com.pgmanager.app.domain.usecase.VerifyEmailCodeUseCase
 import com.pgmanager.app.security.EncryptedSessionStore
 
 class AppContainer(val context: Context) {
@@ -60,6 +62,14 @@ class AppContainer(val context: Context) {
 
     val verifyCredentialUseCase: VerifyCredentialUseCase by lazy {
         VerifyCredentialUseCase(authRepository)
+    }
+
+    val sendEmailCodeUseCase: SendEmailCodeUseCase by lazy {
+        SendEmailCodeUseCase(authRepository)
+    }
+
+    val verifyEmailCodeUseCase: VerifyEmailCodeUseCase by lazy {
+        VerifyEmailCodeUseCase(authRepository)
     }
 
     val assignRoleUseCase: AssignRoleUseCase by lazy {

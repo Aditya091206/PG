@@ -1,5 +1,6 @@
 import * as functions from "firebase-functions/v2";
 import * as admin from "firebase-admin";
+import { createHash, randomInt } from "crypto";
 import { ExternalGstVerificationAdapter } from "./gstAdapter";
 import { slugifyPgName, generateHmacSuffix, formatPgCode } from "./codeGenerator";
 
@@ -13,6 +14,141 @@ const gstAdapter = new ExternalGstVerificationAdapter();
 
 // Single configuration value for join request expiry
 export const JOIN_REQUEST_EXPIRY_HOURS = 24;
+
+const EMAIL_CODE_TTL_MS = 10 * 60 * 1000;
+const EMAIL_CODE_RESEND_MS = 60 * 1000;
+const EMAIL_CODE_WINDOW_MS = 60 * 60 * 1000;
+const EMAIL_CODE_MAX_REQUESTS_PER_HOUR = 5;
+const EMAIL_CODE_MAX_ATTEMPTS = 5;
+
+function emailCodeDocumentId(email: string): string {
+  return createHash("sha256").update(email).digest("hex");
+}
+
+function hashEmailCode(email: string, code: string): string {
+  return createHash("sha256").update(`${email}:${code}`).digest("hex");
+}
+
+function normalizedEmail(value: unknown): string {
+  if (typeof value !== "string") {
+    throw new functions.https.HttpsError("invalid-argument", "A valid email is required.");
+  }
+  const email = value.trim().toLowerCase();
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) || email.length > 254) {
+    throw new functions.https.HttpsError("invalid-argument", "A valid email is required.");
+  }
+  return email;
+}
+
+async function sendBrevoEmail(email: string, code: string): Promise<void> {
+  const apiKey = process.env.BREVO_API_KEY;
+  const senderEmail = process.env.BREVO_SENDER_EMAIL;
+  const senderName = process.env.BREVO_SENDER_NAME || "PG Application";
+  if (!apiKey || !senderEmail) {
+    throw new functions.https.HttpsError(
+      "failed-precondition",
+      "Email delivery is not configured. Set BREVO_API_KEY and BREVO_SENDER_EMAIL."
+    );
+  }
+
+  const response = await fetch("https://api.brevo.com/v3/smtp/email", {
+    method: "POST",
+    headers: {
+      "accept": "application/json",
+      "api-key": apiKey,
+      "content-type": "application/json",
+    },
+    body: JSON.stringify({
+      sender: { email: senderEmail, name: senderName },
+      to: [{ email }],
+      subject: "Your PG Manager verification code",
+      textContent: `Your PG Manager verification code is ${code}. It expires in 10 minutes.`,
+    }),
+  });
+  if (!response.ok) {
+    throw new functions.https.HttpsError("unavailable", "Email delivery failed. Please try again.");
+  }
+}
+
+export const sendEmailCode = functions.https.onCall(async (request) => {
+  const email = normalizedEmail(request.data?.email);
+  const codeRef = db.collection("email_login_codes").doc(emailCodeDocumentId(email));
+  const now = Date.now();
+  const existing = await codeRef.get();
+  const existingData = existing.data();
+  if (existingData?.sentAt && now - existingData.sentAt < EMAIL_CODE_RESEND_MS) {
+    throw new functions.https.HttpsError("resource-exhausted", "Please wait before requesting another code.");
+  }
+  const windowStartedAt = existingData?.windowStartedAt ?? now;
+  const requestCount = now - windowStartedAt >= EMAIL_CODE_WINDOW_MS
+    ? 0
+    : (existingData?.requestCount ?? 0);
+  if (requestCount >= EMAIL_CODE_MAX_REQUESTS_PER_HOUR) {
+    throw new functions.https.HttpsError(
+      "resource-exhausted",
+      "Too many code requests. Please try again later."
+    );
+  }
+
+  const code = randomInt(100000, 1000000).toString();
+  await codeRef.set({
+    email,
+    codeHash: hashEmailCode(email, code),
+    expiresAt: now + EMAIL_CODE_TTL_MS,
+    sentAt: now,
+    attempts: 0,
+    windowStartedAt: requestCount === 0 ? now : windowStartedAt,
+    requestCount: requestCount + 1,
+  });
+
+  try {
+    await sendBrevoEmail(email, code);
+  } catch (error) {
+    await codeRef.delete();
+    throw error;
+  }
+  return { success: true };
+});
+
+export const verifyEmailCode = functions.https.onCall(async (request) => {
+  const email = normalizedEmail(request.data?.email);
+  const code = typeof request.data?.code === "string" ? request.data.code.trim() : "";
+  if (!/^\d{6}$/.test(code)) {
+    throw new functions.https.HttpsError("invalid-argument", "The code must contain six digits.");
+  }
+
+  const codeRef = db.collection("email_login_codes").doc(emailCodeDocumentId(email));
+  let valid = false;
+  await db.runTransaction(async (transaction) => {
+    const snapshot = await transaction.get(codeRef);
+    const data = snapshot.data();
+    if (!data || data.expiresAt < Date.now() || data.attempts >= EMAIL_CODE_MAX_ATTEMPTS) {
+      throw new functions.https.HttpsError("invalid-argument", "The code is invalid or expired.");
+    }
+    const attempts = data.attempts + 1;
+    if (data.codeHash !== hashEmailCode(email, code)) {
+      transaction.update(codeRef, { attempts });
+      throw new functions.https.HttpsError("invalid-argument", "The code is invalid or expired.");
+    }
+    transaction.delete(codeRef);
+    valid = true;
+  });
+  if (!valid) {
+    throw new functions.https.HttpsError("invalid-argument", "The code is invalid or expired.");
+  }
+
+  let user;
+  try {
+    user = await auth.getUserByEmail(email);
+  } catch (error) {
+    if ((error as { code?: string }).code !== "auth/user-not-found") {
+      throw new functions.https.HttpsError("internal", "Unable to verify the email.");
+    }
+    user = await auth.createUser({ email, emailVerified: true });
+  }
+  const customToken = await auth.createCustomToken(user.uid);
+  return { customToken };
+});
 
 /**
  * Callable: Assign user role and custom claims.

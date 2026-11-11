@@ -21,10 +21,10 @@ import com.pgmanager.app.domain.repository.AuthRepository
 import com.pgmanager.app.data.LocalDatabase
 import com.pgmanager.app.security.EncryptedSessionStore
 import kotlinx.coroutines.channels.awaitClose
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.callbackFlow
 import kotlinx.coroutines.tasks.await
-import java.io.File
 import java.util.concurrent.TimeUnit
 
 class AuthRepositoryImpl(
@@ -41,25 +41,25 @@ class AuthRepositoryImpl(
     )
 
     init {
-        sessionStore.getUserId()?.let { userId ->
-            localAuthState.value = when (userId) {
+        val storedUserId = sessionStore.getUserId()
+        if (storedUserId != null) {
+            localAuthState.value = when (storedUserId) {
                 "local-owner" -> AuthState.Authenticated(
-                    User(userId, "9876543210", "owner@pgmanager.local", "Demo Owner", UserRole.OWNER)
+                    User(storedUserId, "9876543210", "owner@pgmanager.local", "Demo Owner", UserRole.OWNER)
                 )
                 "local-student" -> AuthState.Authenticated(
-                    User(userId, "9876543211", "student@pgmanager.local", "Demo Student", UserRole.STUDENT)
+                    User(storedUserId, "9876543211", "student@pgmanager.local", "Demo Student", UserRole.STUDENT)
                 )
                 else -> AuthState.Unauthenticated
             }
-        } ?: auth.currentUser?.let { firebaseUser ->
-            localAuthState.value = AuthState.Authenticated(
-                User(
-                    userId = firebaseUser.uid,
-                    phoneNumber = firebaseUser.phoneNumber ?: "",
-                    email = firebaseUser.email,
-                    fullName = firebaseUser.displayName ?: ""
-                )
-            )
+        }
+        auth.currentUser?.let {
+            kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.IO).launch {
+                val user = getCurrentUser()
+                if (user != null) {
+                    localAuthState.value = AuthState.Authenticated(user)
+                }
+            }
         }
     }
 
@@ -69,6 +69,47 @@ class AuthRepositoryImpl(
         sessionStore.saveSession(user.userId, user.phoneNumber, user.role, user.activePgId)
         localAuthState.value = AuthState.Authenticated(user)
         return Result.success(user)
+    }
+
+    override suspend fun sendEmailCode(email: String): Result<Unit> {
+        return try {
+            functions.getHttpsCallable("sendEmailCode")
+                .call(mapOf("email" to email.trim().lowercase()))
+                .await()
+            Result.success(Unit)
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
+    override suspend fun verifyEmailCode(email: String, code: String): Result<User> {
+        return try {
+            val result = functions.getHttpsCallable("verifyEmailCode")
+                .call(mapOf("email" to email.trim().lowercase(), "code" to code))
+                .await()
+            val token = result.data as? Map<*, *>
+            val customToken = token?.get("customToken") as? String
+                ?: throw IllegalStateException("Email verification did not return a sign-in token")
+            val authResult = auth.signInWithCustomToken(customToken).await()
+            val firebaseUser = authResult.user ?: throw IllegalStateException("Firebase user is null")
+            val userRef = firestore.collection("users").document(firebaseUser.uid)
+            if (!userRef.get().await().exists()) {
+                userRef.set(
+                    mapOf(
+                        "userId" to firebaseUser.uid,
+                        "email" to (firebaseUser.email ?: email.trim().lowercase()),
+                        "role" to "unassigned",
+                        "createdAt" to com.google.firebase.firestore.FieldValue.serverTimestamp()
+                    )
+                ).await()
+            }
+            val user = getCurrentUser() ?: User(userId = firebaseUser.uid, email = firebaseUser.email)
+            sessionStore.saveSession(user.userId, user.phoneNumber, user.role, user.activePgId)
+            localAuthState.value = AuthState.Authenticated(user)
+            Result.success(user)
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
     }
 
     override fun observeAuthState(): Flow<AuthState> = localAuthState
@@ -141,6 +182,7 @@ class AuthRepositoryImpl(
                 phoneNumber = firebaseUser.phoneNumber ?: ""
             )
             localAuthState.value = AuthState.Authenticated(user)
+            sessionStore.saveSession(user.userId, user.phoneNumber, user.role, user.activePgId)
             Result.success(user)
         } catch (e: Exception) {
             Result.failure(e)

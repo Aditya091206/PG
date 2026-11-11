@@ -17,6 +17,16 @@ class VerifyOtpUseCase(private val authRepository: AuthRepository) {
     }
 }
 
+class SendEmailCodeUseCase(private val authRepository: AuthRepository) {
+    suspend operator fun invoke(email: String): Result<Unit> =
+        authRepository.sendEmailCode(email)
+}
+
+class VerifyEmailCodeUseCase(private val authRepository: AuthRepository) {
+    suspend operator fun invoke(email: String, code: String): Result<User> =
+        authRepository.verifyEmailCode(email, code)
+}
+
 class VerifyCredentialUseCase(private val authRepository: AuthRepository) {
     suspend operator fun invoke(credential: PhoneAuthCredential): Result<User> {
         return authRepository.verifyCredential(credential)

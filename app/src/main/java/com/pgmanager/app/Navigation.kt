@@ -47,6 +47,8 @@ fun MainNavigation() {
             observeAuthStateUseCase = container.observeAuthStateUseCase,
             verifyOtpUseCase = container.verifyOtpUseCase,
             verifyCredentialUseCase = container.verifyCredentialUseCase,
+            sendEmailCodeUseCase = container.sendEmailCodeUseCase,
+            verifyEmailCodeUseCase = container.verifyEmailCodeUseCase,
             assignRoleUseCase = container.assignRoleUseCase,
             updateProfileUseCase = container.updateProfileUseCase,
             logoutUseCase = container.logoutUseCase,

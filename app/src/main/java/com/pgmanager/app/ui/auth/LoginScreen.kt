@@ -251,18 +251,64 @@ fun LoginScreen(
                         fontWeight = FontWeight.SemiBold
                     )
                 }
+            }
 
-                OutlinedButton(
-                    onClick = {
-                        activity?.let { viewModel.signInWithGoogle(it) {} }
-                    },
+            OutlinedButton(
+                onClick = { viewModel.sendEmailCode() },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(top = 12.dp),
+                enabled = state.email.isNotBlank() && state.termsAccepted &&
+                    !state.isLoading && state.canResendEmailCode,
+                shape = ButtonShape
+            ) {
+                Text(if (state.emailCodeRequested) "Resend email code" else "Get code by email")
+            }
+
+            if (state.emailCodeRequested) {
+                Spacer(modifier = Modifier.height(12.dp))
+                OutlinedTextField(
+                    value = state.emailCode,
+                    onValueChange = viewModel::onEmailCodeChanged,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .semantics { contentDescription = "Six digit email code input" },
+                    label = { Text("Email verification code") },
+                    placeholder = { Text("123456") },
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.NumberPassword),
+                    singleLine = true,
+                    shape = InputFieldShape
+                )
+                Button(
+                    onClick = { viewModel.verifyEmailCode { } },
                     modifier = Modifier
                         .fillMaxWidth()
                         .padding(top = 12.dp),
-                    enabled = !state.isLoading
+                    enabled = state.emailCode.length == 6 && !state.isLoading,
+                    shape = ButtonShape
                 ) {
-                    Text("Continue with Google")
+                    Text("Verify email code")
                 }
+                if (!state.canResendEmailCode) {
+                    Text(
+                        text = "Resend email code in ${state.emailResendCountdown}s",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(top = 4.dp)
+                    )
+                }
+            }
+
+            OutlinedButton(
+                onClick = {
+                    activity?.let { viewModel.signInWithGoogle(it) {} }
+                },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(top = 12.dp),
+                enabled = !state.isLoading
+            ) {
+                Text("Continue with Google")
             }
 
             OutlinedButton(

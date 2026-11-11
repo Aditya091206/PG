@@ -17,6 +17,8 @@ import com.pgmanager.app.domain.usecase.ObserveAuthStateUseCase
 import com.pgmanager.app.domain.usecase.UpdateProfileUseCase
 import com.pgmanager.app.domain.usecase.VerifyOtpUseCase
 import com.pgmanager.app.domain.usecase.VerifyCredentialUseCase
+import com.pgmanager.app.domain.usecase.SendEmailCodeUseCase
+import com.pgmanager.app.domain.usecase.VerifyEmailCodeUseCase
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -32,6 +34,8 @@ class AuthViewModel(
     private val observeAuthStateUseCase: ObserveAuthStateUseCase,
     private val verifyOtpUseCase: VerifyOtpUseCase,
     private val verifyCredentialUseCase: VerifyCredentialUseCase,
+    private val sendEmailCodeUseCase: SendEmailCodeUseCase,
+    private val verifyEmailCodeUseCase: VerifyEmailCodeUseCase,
     private val assignRoleUseCase: AssignRoleUseCase,
     private val updateProfileUseCase: UpdateProfileUseCase,
     private val logoutUseCase: LogoutUseCase,
@@ -56,6 +60,71 @@ class AuthViewModel(
 
     fun onPasswordChanged(password: String) {
         _uiState.update { it.copy(password = password, errorMessage = null) }
+    }
+
+    fun onEmailCodeChanged(code: String) {
+        _uiState.update {
+            it.copy(emailCode = code.filter { character -> character.isDigit() }.take(6), errorMessage = null)
+        }
+    }
+
+    fun sendEmailCode() {
+        val email = _uiState.value.email.trim()
+        if (!android.util.Patterns.EMAIL_ADDRESS.matcher(email).matches()) {
+            _uiState.update { it.copy(errorMessage = "Enter a valid email address") }
+            return
+        }
+        if (!_uiState.value.termsAccepted) {
+            _uiState.update { it.copy(errorMessage = "Please accept the Terms and Privacy Policy to continue") }
+            return
+        }
+        if (_uiState.value.isLoading || !_uiState.value.canResendEmailCode) return
+
+        _uiState.update { it.copy(isLoading = true, errorMessage = null) }
+        viewModelScope.launch {
+            sendEmailCodeUseCase(email)
+                .onSuccess {
+                    _uiState.update {
+                        it.copy(
+                            isLoading = false,
+                            emailCodeRequested = true,
+                            canResendEmailCode = false,
+                            emailResendCountdown = 60
+                        )
+                    }
+                    startEmailResendTimer()
+                }
+                .onFailure { error ->
+                    _uiState.update {
+                        it.copy(
+                            isLoading = false,
+                            errorMessage = error.message ?: "Unable to send the email code"
+                        )
+                    }
+                }
+        }
+    }
+
+    fun verifyEmailCode(onSuccess: (User) -> Unit) {
+        val email = _uiState.value.email.trim()
+        val code = _uiState.value.emailCode
+        if (code.length != 6) {
+            _uiState.update { it.copy(errorMessage = "Enter the 6-digit code sent to your email") }
+            return
+        }
+        _uiState.update { it.copy(isLoading = true, errorMessage = null) }
+        viewModelScope.launch {
+            verifyEmailCodeUseCase(email, code)
+                .onSuccess {
+                    _uiState.update { it.copy(isLoading = false) }
+                    onSuccess(it)
+                }
+                .onFailure { error ->
+                    _uiState.update {
+                        it.copy(isLoading = false, errorMessage = error.message ?: "Invalid or expired email code")
+                    }
+                }
+        }
     }
 
     fun signInWithLocalCredentials(onSuccess: (User) -> Unit) {
@@ -151,9 +220,8 @@ class AuthViewModel(
                 _uiState.update { it.copy(isLoading = true, otpCode = code ?: it.otpCode) }
                 viewModelScope.launch {
                     verifyCredentialUseCase(credential)
-                        .onSuccess { user ->
+                        .onSuccess {
                             _uiState.update { it.copy(isLoading = false) }
-                            onCodeSent()
                         }
                         .onFailure { error ->
                             _uiState.update {
@@ -222,6 +290,17 @@ class AuthViewModel(
             for (i in 60 downTo 1) {
                 _uiState.update { it.copy(resendCountdown = i) }
                 delay(1000)
+            }
+
+            private fun startEmailResendTimer() {
+                timerJob?.cancel()
+                timerJob = viewModelScope.launch {
+                    for (i in 60 downTo 1) {
+                        _uiState.update { it.copy(emailResendCountdown = i) }
+                        delay(1000)
+                    }
+                    _uiState.update { it.copy(canResendEmailCode = true, emailResendCountdown = 0) }
+                }
             }
             _uiState.update { it.copy(canResend = true, resendCountdown = 0) }
         }

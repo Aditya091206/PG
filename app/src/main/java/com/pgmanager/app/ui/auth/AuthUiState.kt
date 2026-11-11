@@ -5,6 +5,10 @@ import com.pgmanager.app.domain.model.UserRole
 data class AuthUiState(
     val email: String = "",
     val password: String = "",
+    val emailCodeRequested: Boolean = false,
+    val emailCode: String = "",
+    val emailResendCountdown: Int = 0,
+    val canResendEmailCode: Boolean = true,
     val phoneNumber: String = "",
     val countryCode: String = "+91",
     val verificationId: String = "",
