@@ -12,11 +12,19 @@ service cloud.firestore {
     }
 
     function isOwner() {
-      return isAuthenticated() && request.auth.token.role == 'owner';
+      return isAuthenticated() && (
+        request.auth.token.role == 'owner' ||
+        (exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
+          get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'owner')
+      );
     }
 
     function isStudent() {
-      return isAuthenticated() && request.auth.token.role == 'student';
+      return isAuthenticated() && (
+        request.auth.token.role == 'student' ||
+        (exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
+          get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'student')
+      );
     }
 
     function isPGOwner(pgId) {

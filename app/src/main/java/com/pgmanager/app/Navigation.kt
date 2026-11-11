@@ -10,6 +10,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import android.widget.Toast
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.pgmanager.app.domain.model.AuthState
@@ -108,7 +109,8 @@ fun MainNavigation() {
                     UserRole.OWNER -> OwnerApp(
                         ownerId = "demo-owner",
                         authViewModel = authViewModel,
-                        container = container
+                        container = container,
+                        demoMode = true
                     )
                     UserRole.STUDENT -> {
                         BackHandler {
@@ -150,7 +152,8 @@ fun MainNavigation() {
                 user.role == UserRole.OWNER -> OwnerApp(
                     ownerId = user.userId,
                     authViewModel = authViewModel,
-                    container = container
+                    container = container,
+                    demoMode = false
                 )
                 user.role == UserRole.STUDENT && user.activePgId != null -> StudentHomeScreen(
                     viewModel = viewModel(key = user.userId) {
@@ -189,7 +192,8 @@ fun MainNavigation() {
 private fun OwnerApp(
     ownerId: String,
     authViewModel: AuthViewModel,
-    container: com.pgmanager.app.di.AppContainer
+    container: com.pgmanager.app.di.AppContainer,
+    demoMode: Boolean
 ) {
     var showRegister by remember { mutableStateOf(false) }
     var addRoomForPg by remember { mutableStateOf<String?>(null) }
@@ -222,7 +226,17 @@ private fun OwnerApp(
         )
         else -> OwnerDashboardScreen(
             viewModel = ownerViewModel,
-            onNavigateToCreatePg = { showRegister = true },
+            onNavigateToCreatePg = {
+                if (demoMode) {
+                    Toast.makeText(
+                        PGApplication.instance,
+                        "Sign in as an owner to register a PG",
+                        Toast.LENGTH_LONG
+                    ).show()
+                } else {
+                    showRegister = true
+                }
+            },
             onNavigateToAddRoom = { addRoomForPg = it },
             onLogout = { authViewModel.logout { } }
         )

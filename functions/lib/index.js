@@ -33,7 +33,7 @@ var __importStar = (this && this.__importStar) || (function () {
     };
 })();
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.deleteUserAccount = exports.onJoinRequestCreated = exports.onNoticeCreated = exports.expireJoinRequests = exports.reviewJoinRequest = exports.submitJoinRequest = exports.verifyGst = exports.regeneratePgCode = exports.generatePgCodeForProperty = exports.assignUserRole = exports.JOIN_REQUEST_EXPIRY_HOURS = void 0;
+exports.deleteUserAccount = exports.onJoinRequestCreated = exports.onNoticeCreated = exports.expireJoinRequests = exports.reviewJoinRequest = exports.submitJoinRequest = exports.verifyGst = exports.regeneratePgCode = exports.generatePgCodeForProperty = exports.createPropertyForOwner = exports.assignUserRole = exports.JOIN_REQUEST_EXPIRY_HOURS = void 0;
 const functions = __importStar(require("firebase-functions/v2"));
 const admin = __importStar(require("firebase-admin"));
 const gstAdapter_1 = require("./gstAdapter");
@@ -72,6 +72,62 @@ async (request) => {
         updatedAt: admin.firestore.FieldValue.serverTimestamp(),
     }, { merge: true });
     return { success: true, role };
+});
+/**
+ * Callable: Create a PG and link it to the authenticated owner atomically.
+ */
+exports.createPropertyForOwner = functions.https.onCall(async (request) => {
+    if (!request.auth) {
+        throw new functions.https.HttpsError("unauthenticated", "Sign in as an owner before registering a PG.");
+    }
+    const uid = request.auth.uid;
+    const userDoc = await db.collection("users").doc(uid).get();
+    if (request.auth.token.role !== "owner" && userDoc.data()?.role !== "owner") {
+        throw new functions.https.HttpsError("permission-denied", "Only an owner can register a PG.");
+    }
+    const data = request.data;
+    const required = ["name", "type", "contactPhone", "address"];
+    if (required.some((field) => typeof data[field] !== "string" || !data[field].trim())) {
+        throw new functions.https.HttpsError("invalid-argument", "PG name, type, contact phone, and address are required.");
+    }
+    const pgRef = db.collection("pgs").doc();
+    const property = {
+        pgId: pgRef.id,
+        ownerId: uid,
+        name: data.name,
+        type: data.type,
+        contactPhone: data.contactPhone,
+        address: data.address,
+        latitude: typeof data.latitude === "number" ? data.latitude : 0,
+        longitude: typeof data.longitude === "number" ? data.longitude : 0,
+        gstNumber: data.gstNumber ?? null,
+        gstVerificationStatus: data.gstNumber ? "PENDING" : "NOT_SUBMITTED",
+        amenities: Array.isArray(data.amenities) ? data.amenities : [],
+        rules: Array.isArray(data.rules) ? data.rules : [],
+        photos: Array.isArray(data.photos) ? data.photos : [],
+        securityDepositRules: data.securityDepositRules ?? "One month rent advance deposit",
+        noticePeriodDays: typeof data.noticePeriodDays === "number" ? data.noticePeriodDays : 30,
+        electricityBillingMode: data.electricityBillingMode ?? "INCLUDED",
+        wifiSsid: data.wifiSsid ?? null,
+        wifiPassword: data.wifiPassword ?? null,
+        curfewTime: data.curfewTime ?? "22:30",
+        emergencyContacts: Array.isArray(data.emergencyContacts) ? data.emergencyContacts : [],
+        nearbyLandmarks: Array.isArray(data.nearbyLandmarks) ? data.nearbyLandmarks : [],
+        upiId: data.upiId ?? null,
+        upiQrImageUrl: data.upiQrImageUrl ?? null,
+        createdAt: admin.firestore.FieldValue.serverTimestamp(),
+    };
+    const batch = db.batch();
+    batch.create(pgRef, property);
+    batch.set(db.collection("users").doc(uid), {
+        userId: uid,
+        role: "owner",
+        ownedPgIds: admin.firestore.FieldValue.arrayUnion(pgRef.id),
+        activePgId: pgRef.id,
+        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+    }, { merge: true });
+    await batch.commit();
+    return { pgId: pgRef.id };
 });
 /**
  * Callable: Generate unique PG code with HMAC suffix.
